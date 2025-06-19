@@ -79,19 +79,6 @@ def create_rotation_transforms(num_clients, max_angle):
 def get_dataset(dataset_name, num_clients, alpha=None, rotation_angle=0, noise_rate=0, batch_size=256):
     """
     Load dataset and create federated data loaders with different non-IID settings
-    
-    Args:
-        dataset_name: Name of dataset ('mnist', 'cifar10', 'fmnist', 'svhn')
-        num_clients: Number of federated clients
-        alpha: Dirichlet parameter for label shift (smaller = more non-IID)
-        rotation_angle: Maximum rotation angle for feature shift
-        noise_rate: Label noise rate for concept shift
-        batch_size: Batch size for data loaders
-    
-    Returns:
-        train_loaders: List of training data loaders for each client
-        test_loaders: List of test data loaders for each client  
-        client_data_sizes: List of training data sizes for each client
     """
     
     # Define transforms based on dataset
@@ -238,13 +225,6 @@ def get_dataset(dataset_name, num_clients, alpha=None, rotation_angle=0, noise_r
 def select_clients_for_posfed_k(train_loaders, k):
     """
     Select K representative clients using clustering on label distributions
-    
-    Args:
-        train_loaders: List of training data loaders
-        k: Number of clients to select
-    
-    Returns:
-        selected_indices: Indices of selected clients
     """
     from sklearn.cluster import KMeans
     
