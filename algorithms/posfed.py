@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,10 +48,20 @@ class POSFedServer:
     def run(self):
         """Run the complete POSFed algorithm"""
         
+        print("\n" + "="*60)
+        print("Starting POSFed Algorithm")
+        print("="*60)
+        
+        # Stage 1: Self-Supervised Dataset Distillation
+        print("\nStage 1: Self-Supervised Dataset Distillation")
         synthetic_datasets = self.stage1_dataset_distillation()
         
+        # Stage 2: Global Feature Extractor Learning  
+        print("\nStage 2: Global Feature Extractor Learning")
         self.global_feature_extractor = self.stage2_global_training(synthetic_datasets)
         
+        # Stage 3: Client-Specific Personalization
+        print("\nStage 3: Client-Specific Personalization")
         results = self.stage3_personalization()
         
         return results
@@ -57,7 +71,9 @@ class POSFedServer:
         
         # Select clients for POSFed-K
         if self.posfed_k and self.posfed_k < self.num_clients:
+            print(f"Selecting {self.posfed_k} representative clients...")
             self.selected_clients = select_clients_for_posfed_k(self.train_loaders, self.posfed_k)
+            print(f"Selected clients: {self.selected_clients}")
         else:
             self.selected_clients = list(range(self.num_clients))
         
@@ -66,7 +82,10 @@ class POSFedServer:
         
         synthetic_datasets = {}
         
+        print(f"Running dataset distillation for {len(self.selected_clients)} clients...")
+        
         for i, client_id in enumerate(self.selected_clients):
+            print(f"\nClient {client_id} ({i+1}/{len(self.selected_clients)})")
             
             # Get client's training data
             train_loader = self.train_loaders[client_id]
@@ -79,12 +98,14 @@ class POSFedServer:
                 'y_syn': y_syn
             }
             
+            print(f"Client {client_id}: Generated {x_syn.shape[0]} synthetic samples")
         
         return synthetic_datasets
     
     def stage2_global_training(self, synthetic_datasets):
         """Stage 2: Train global feature extractor on aggregated synthetic data"""
         
+        print("Aggregating synthetic datasets...")
         
         # Aggregate all synthetic datasets
         all_x_syn = []
@@ -94,9 +115,11 @@ class POSFedServer:
             all_x_syn.append(data['x_syn'])
             all_y_syn.append(data['y_syn'])
         
-        # Concatenate all synthetic data
-        x_syn_agg = torch.cat(all_x_syn, dim=0)
-        y_syn_agg = torch.cat(all_y_syn, dim=0)
+        # Concatenate all synthetic data and move to device
+        x_syn_agg = torch.cat(all_x_syn, dim=0).to(self.device)
+        y_syn_agg = torch.cat(all_y_syn, dim=0).to(self.device)
+        
+        print(f"Aggregated synthetic dataset size: {x_syn_agg.shape[0]} samples")
         
         # Create global feature extractor
         global_model = get_model('cnn', self.config).to(self.device)
@@ -155,6 +178,7 @@ class POSFedServer:
         self.client_classifiers = []
         
         for client_id in range(self.num_clients):
+            print(f"\nTraining client {client_id} classifier...")
             
             # Create personalized classification head
             classifier = ClassificationHead(self.feature_dim, self.num_classes).to(self.device)
@@ -205,11 +229,17 @@ class POSFedServer:
                 
                 scheduler.step()
                 
+                # Log progress
+                if epoch % 20 == 0:
+                    print(f"Client {client_id}, Epoch {epoch}, "
+                          f"Loss: {train_loss.avg:.4f}, Acc: {train_acc.avg:.2f}%")
+            
             # Evaluate on test set
             test_acc = self.evaluate_client(client_id, classifier, test_loader)
             client_accuracies.append(test_acc)
             self.client_classifiers.append(classifier)
             
+            print(f"Client {client_id} test accuracy: {test_acc:.2f}%")
         
         # Compute overall results
         avg_test_acc = np.mean(client_accuracies)
@@ -222,6 +252,10 @@ class POSFedServer:
             'selected_clients': self.selected_clients,
             'config': self.config
         }
+        
+        print(f"\nOverall Results:")
+        print(f"Average test accuracy: {avg_test_acc:.2f}%")
+        print(f"Standard deviation: {std_test_acc:.2f}%")
         
         return results
     
@@ -293,6 +327,7 @@ class POSFedServer:
                 classifier.load_state_dict(torch.load(client_path))
                 self.client_classifiers.append(classifier)
         
+        print(f"Loaded {len(self.client_classifiers)} client classifiers")
 
 # Baseline comparison methods
 class TraditionalOSFL:
