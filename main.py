@@ -80,16 +80,6 @@ def main():
     for key, value in vars(args).items():
         config[key] = value
     
-    if args.verbose:
-        print("="*50)
-        print("POSFed: Personalized One-Shot Federated Learning")
-        print("="*50)
-        print(f"Dataset: {args.dataset}")
-        print(f"Clients: {args.num_clients}")
-        print(f"Non-IID settings: α={args.alpha}, rotation={args.rotation_angle}°, noise={args.noise_rate}")
-        if args.posfed_k:
-            print(f"POSFed-K with {args.posfed_k} selected clients")
-        print("="*50)
     
     # Load data and create federated datasets
     train_loaders, test_loaders, client_data_sizes = get_dataset(
@@ -113,26 +103,6 @@ def main():
     # Run POSFed algorithm
     results = server.run()
     
-    if args.verbose:
-        print("\n" + "="*50)
-        print("Results:")
-        print(f"Average test accuracy: {results['avg_test_acc']:.4f}")
-        print(f"Standard deviation: {results['std_test_acc']:.4f}")
-        print("="*50)
-    
-    # Save results
-    if args.save_results:
-        import json
-        import os
-        
-        os.makedirs('results', exist_ok=True)
-        result_file = f"results/posfed_{args.dataset}_alpha{args.alpha}_clients{args.num_clients}.json"
-        
-        with open(result_file, 'w') as f:
-            json.dump(results, f, indent=2)
-        
-        if args.verbose:
-            print(f"Results saved to {result_file}")
 
 if __name__ == '__main__':
     main()
