@@ -3,6 +3,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import trange
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from models.networks import get_model, get_ssl_model, barlow_twins_loss, SimCLRAugmentation
 
 class ModelPool:
@@ -259,7 +263,13 @@ class KRRSTDistiller:
     
     def run(self, dataloader, num_synthetic):
         """Run the complete KRR-ST algorithm"""
-        return self.distill_dataset(dataloader, num_synthetic)
+        x_syn, y_syn = self.distill_dataset(dataloader, num_synthetic)
+        
+        # Ensure data is on CPU for transmission (simulating federated setting)
+        x_syn = x_syn.cpu()
+        y_syn = y_syn.cpu()
+        
+        return x_syn, y_syn
 
 # Utility functions for synthetic data optimization
 def match_loss(x_syn, y_syn, x_real, y_real, model, loss_fn=F.mse_loss):
