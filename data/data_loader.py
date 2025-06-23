@@ -6,6 +6,53 @@ from collections import defaultdict
 import random
 from config import get_transforms, get_shift_transform
 
+class RotationDataset(Dataset):
+    """Dataset wrapper that applies rotation transformation"""
+    def __init__(self, dataset, rotation_angle, dataset_name):
+        self.dataset = dataset
+        self.rotation_angle = rotation_angle
+        self.dataset_name = dataset_name.lower()
+        
+        # Define rotation transform
+        if self.dataset_name in ['mnist', 'fmnist']:
+            self.rotation_transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.RandomRotation(degrees=(rotation_angle, rotation_angle)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    (0.1307,) if self.dataset_name == 'mnist' else (0.2860,), 
+                    (0.3081,) if self.dataset_name == 'mnist' else (0.3530,)
+                )
+            ])
+        else:
+            self.rotation_transform = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.RandomRotation(degrees=(rotation_angle, rotation_angle)),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, padding=4),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    (0.4914, 0.4822, 0.4465) if self.dataset_name == 'cifar10' else (0.5, 0.5, 0.5),
+                    (0.2023, 0.1994, 0.2010) if self.dataset_name == 'cifar10' else (0.5, 0.5, 0.5)
+                )
+            ])
+    
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, idx):
+        image, label = self.dataset[idx]
+        
+        # Apply rotation transform
+        if self.rotation_angle > 0:
+            # Convert tensor back to PIL for rotation, then back to tensor
+            if isinstance(image, torch.Tensor):
+                image = transforms.ToPILImage()(image)
+            image = self.rotation_transform(image)
+        
+        return image, label
+
+
 class NoisyDataset(Dataset):
     """Dataset wrapper that adds label noise"""
     def __init__(self, dataset, noise_rate, num_classes):
@@ -79,6 +126,19 @@ def create_rotation_transforms(num_clients, max_angle):
 def get_dataset(dataset_name, num_clients, alpha=None, rotation_angle=0, noise_rate=0, batch_size=256):
     """
     Load dataset and create federated data loaders with different non-IID settings
+    
+    Args:
+        dataset_name: Name of dataset ('mnist', 'cifar10', 'fmnist', 'svhn')
+        num_clients: Number of federated clients
+        alpha: Dirichlet parameter for label shift (smaller = more non-IID)
+        rotation_angle: Maximum rotation angle for feature shift
+        noise_rate: Label noise rate for concept shift
+        batch_size: Batch size for data loaders
+    
+    Returns:
+        train_loaders: List of training data loaders for each client
+        test_loaders: List of test data loaders for each client  
+        client_data_sizes: List of training data sizes for each client
     """
     
     # Define transforms based on dataset
@@ -169,33 +229,12 @@ def get_dataset(dataset_name, num_clients, alpha=None, rotation_angle=0, noise_r
         
         # Apply feature shift (rotation) if specified
         if rotation_transforms is not None:
-            # Apply client-specific rotation
-            original_transform = client_train_dataset.dataset.transform
-            rotation_ratio = client_id / num_clients
-            client_angle = rotation_angle * rotation_ratio
-            
-            # Create new transform with rotation
-            if dataset_name.lower() in ['mnist', 'fmnist']:
-                new_transform = transforms.Compose([
-                    transforms.ToPILImage(),
-                    transforms.RandomRotation(degrees=(client_angle, client_angle)),
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.1307,) if dataset_name.lower() == 'mnist' else (0.2860,), 
-                                       (0.3081,) if dataset_name.lower() == 'mnist' else (0.3530,))
-                ])
-            else:
-                new_transform = transforms.Compose([
-                    transforms.ToPILImage(),
-                    transforms.RandomRotation(degrees=(client_angle, client_angle)),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.RandomCrop(32, padding=4),
-                    transforms.ToTensor(),
-                    transforms.Normalize((0.4914, 0.4822, 0.4465) if dataset_name.lower() == 'cifar10' else (0.5, 0.5, 0.5),
-                                       (0.2023, 0.1994, 0.2010) if dataset_name.lower() == 'cifar10' else (0.5, 0.5, 0.5))
-                ])
-            
-            # Apply new transform to dataset
-            client_train_dataset.dataset.transform = new_transform
+            # Create a wrapper dataset that applies rotation
+            client_train_dataset = RotationDataset(
+                client_train_dataset, 
+                rotation_angle * client_id / num_clients,
+                dataset_name
+            )
         
         # Apply concept shift (label noise) if specified
         if noise_rate > 0:
@@ -225,8 +264,15 @@ def get_dataset(dataset_name, num_clients, alpha=None, rotation_angle=0, noise_r
 def select_clients_for_posfed_k(train_loaders, k):
     """
     Select K representative clients using clustering on label distributions
+    
+    Args:
+        train_loaders: List of training data loaders
+        k: Number of clients to select
+    
+    Returns:
+        selected_indices: Indices of selected clients
     """
-    from sklearn.cluster import KMeans
+    # Simple implementation without sklearn dependency
     
     # Calculate label distribution for each client
     client_distributions = []
@@ -250,23 +296,49 @@ def select_clients_for_posfed_k(train_loaders, k):
     
     client_distributions = np.array(client_distributions)
     
-    # Perform K-means clustering
+    # Simple clustering: select clients with most diverse distributions
     if k >= len(train_loaders):
         return list(range(len(train_loaders)))
     
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    cluster_labels = kmeans.fit_predict(client_distributions)
-    
-    # Select one representative client from each cluster
+    # Use a simple heuristic: select clients that maximize coverage of classes
     selected_indices = []
-    for cluster_id in range(k):
-        cluster_clients = np.where(cluster_labels == cluster_id)[0]
-        if len(cluster_clients) > 0:
-            # Select client closest to cluster center
-            cluster_center = kmeans.cluster_centers_[cluster_id]
-            distances = [np.linalg.norm(client_distributions[idx] - cluster_center) 
-                        for idx in cluster_clients]
-            representative = cluster_clients[np.argmin(distances)]
-            selected_indices.append(representative)
+    remaining_clients = list(range(len(train_loaders)))
+    
+    # First, select client with most uniform distribution
+    entropies = []
+    for dist in client_distributions:
+        # Calculate entropy (higher = more uniform)
+        entropy = -np.sum(dist * np.log(dist + 1e-12))
+        entropies.append(entropy)
+    
+    # Select client with highest entropy first
+    first_client = np.argmax(entropies)
+    selected_indices.append(first_client)
+    remaining_clients.remove(first_client)
+    
+    # For remaining selections, pick clients that are most different from already selected
+    for _ in range(k - 1):
+        if not remaining_clients:
+            break
+            
+        max_min_distance = -1
+        best_client = None
+        
+        for candidate in remaining_clients:
+            # Calculate minimum distance to any selected client
+            min_distance = float('inf')
+            for selected in selected_indices:
+                # Use L2 distance between distributions
+                distance = np.linalg.norm(client_distributions[candidate] - client_distributions[selected])
+                min_distance = min(min_distance, distance)
+            
+            # Select candidate with maximum minimum distance (most diverse)
+            if min_distance > max_min_distance:
+                max_min_distance = min_distance
+                best_client = candidate
+        
+        if best_client is not None:
+            selected_indices.append(best_client)
+            remaining_clients.remove(best_client)
     
     return selected_indices
