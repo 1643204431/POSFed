@@ -65,6 +65,7 @@ def get_config(dataset_name):
     
     return config
 
+# Dataset-specific transformations
 def get_transforms(dataset_name, img_size, mean, std, augment=True):
     """Get data transformations for different datasets"""
     import torchvision.transforms as transforms
@@ -90,6 +91,7 @@ def get_transforms(dataset_name, img_size, mean, std, augment=True):
     
     return transform
 
+# Augmentation strategies for different shift types
 def get_shift_transform(shift_type, **kwargs):
     """Get transformations for different types of distribution shifts"""
     import torchvision.transforms as transforms
