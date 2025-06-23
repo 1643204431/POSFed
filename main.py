@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import argparse
 import random
 import numpy as np
@@ -71,7 +75,10 @@ def main():
     
     # Update config with args
     config = get_config(args.dataset)
-    config.update(vars(args))
+    
+    # Update config with command line arguments
+    for key, value in vars(args).items():
+        config[key] = value
     
     if args.verbose:
         print("="*50)
@@ -106,6 +113,26 @@ def main():
     # Run POSFed algorithm
     results = server.run()
     
+    if args.verbose:
+        print("\n" + "="*50)
+        print("Results:")
+        print(f"Average test accuracy: {results['avg_test_acc']:.4f}")
+        print(f"Standard deviation: {results['std_test_acc']:.4f}")
+        print("="*50)
     
+    # Save results
+    if args.save_results:
+        import json
+        import os
+        
+        os.makedirs('results', exist_ok=True)
+        result_file = f"results/posfed_{args.dataset}_alpha{args.alpha}_clients{args.num_clients}.json"
+        
+        with open(result_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        if args.verbose:
+            print(f"Results saved to {result_file}")
+
 if __name__ == '__main__':
     main()
