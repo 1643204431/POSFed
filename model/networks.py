@@ -228,13 +228,15 @@ def off_diagonal(x):
 class SimCLRAugmentation:
     """Simple augmentation for self-supervised learning"""
     def __init__(self, size):
-        self.transform = nn.Sequential(
-            # Random crop and resize would go here for more complex augmentation
-            # For simplicity, we'll use basic transformations
-        )
+        self.size = size
     
     def __call__(self, x):
         # Return two augmented versions of the same image
-        x1 = x + 0.1 * torch.randn_like(x)  # Add noise
-        x2 = x + 0.1 * torch.randn_like(x)  # Add different noise
+        # Add small random noise for augmentation
+        noise1 = 0.1 * torch.randn_like(x)
+        noise2 = 0.1 * torch.randn_like(x)
+        
+        x1 = torch.clamp(x + noise1, 0, 1)
+        x2 = torch.clamp(x + noise2, 0, 1)
+        
         return x1, x2
